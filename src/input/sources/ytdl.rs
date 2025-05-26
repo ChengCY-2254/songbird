@@ -27,11 +27,11 @@ enum QueryType<'a> {
 }
 
 impl<'a> QueryType<'a> {
-    fn as_cow_str(&'a self, n_results: usize) -> Cow<'a, str> {
+    fn as_cow_str(&'a self,web_site:&str, n_results: usize) -> Cow<'a, str> {
         match self {
             Self::Url(Cow::Owned(u)) => Cow::Borrowed(u),
             Self::Url(Cow::Borrowed(u)) => Cow::Borrowed(u),
-            Self::Search(s) => Cow::Owned(format!("ytsearch{n_results}:{s}")),
+            Self::Search(s) => Cow::Owned(format!("{web_site}:{n_results}:{s}")),
         }
     }
 }
@@ -113,12 +113,13 @@ impl<'a> YoutubeDl<'a> {
     /// Returns up to 5 matches by default.
     pub async fn search(
         &mut self,
+        web_site:Option<&str>,
         n_results: Option<usize>,
     ) -> Result<impl Iterator<Item = AuxMetadata>, AudioStreamError> {
         let n_results = n_results.unwrap_or(5);
-
+        let web_site = web_site.unwrap_or("ytsearch");
         Ok(self
-            .query(n_results)
+            .query(web_site,n_results)
             .await?
             .into_iter()
             .map(|v| v.as_aux_metadata()))
@@ -128,9 +129,10 @@ impl<'a> YoutubeDl<'a> {
     /// possible matches.
     pub async fn query(
         &mut self,
+        web_site:&str,
         n_results: usize,
     ) -> Result<Vec<YoutubeDlOutput>, AudioStreamError> {
-        let query_str = self.query.as_cow_str(n_results);
+        let query_str = self.query.as_cow_str(web_site,n_results);
         let ytdl_args = [
             "-j",
             &query_str,
@@ -235,7 +237,7 @@ impl Compose for YoutubeDl<'_> {
         &mut self,
     ) -> Result<AudioStream<Box<dyn MediaSource>>, AudioStreamError> {
         // panic safety: `query` should have ensured > 0 results if `Ok`
-        let mut results = self.query(1).await?;
+        let mut results = self.query("",1).await?;
         let result = results.swap_remove(0);
 
         self.get_stream(&result).await
@@ -250,7 +252,7 @@ impl Compose for YoutubeDl<'_> {
             return Ok(meta.clone());
         }
 
-        self.query(1).await?;
+        self.query("ytsearch",1).await?;
 
         self.metadata.clone().ok_or_else(|| {
             let msg: Box<dyn Error + Send + Sync + 'static> =
@@ -304,7 +306,7 @@ mod tests {
     #[ntest::timeout(20_000)]
     async fn ytdl_search_plays() {
         let mut ytdl = YoutubeDl::new_search(Client::new(), "cloudkicker 94 days");
-        let res = ytdl.search(Some(1)).await;
+        let res = ytdl.search(Some("ytsearch"),Some(1)).await;
 
         let res = res.unwrap();
         assert_eq!(res.count(), 1);
@@ -317,7 +319,7 @@ mod tests {
     #[ntest::timeout(20_000)]
     async fn ytdl_search_3() {
         let mut ytdl = YoutubeDl::new_search(Client::new(), "test");
-        let res = ytdl.search(Some(3)).await;
+        let res = ytdl.search(Some("ytsearch"),Some(3)).await;
 
         assert_eq!(res.unwrap().count(), 3);
     }
